@@ -282,7 +282,7 @@ This loads OpenWrt **into RAM only**. Nothing is written to flash, and pulling t
 ---
 
 
-### 8.3 Network defaults
+## Step 7 Network defaults
 
 I edited `/etc/board.d/02_network` inside the root filesystem so that a fresh install creates:
 
@@ -302,7 +302,7 @@ Each LAN port is its own VLAN and bridge member, so you can **add or remove each
 
 ---
 
-## Step 9: Flash it permanently
+## Step 8: Flash it permanently
 
 From the RAM-booted OpenWrt, either use **LuCI → System → Backup / Flash Firmware**, untick **Keep settings**, and upload the image, or:
 
