@@ -99,13 +99,9 @@ The fix is to **replace the flash chip with a 16 MB one**. I used a **Winbond W2
 
 ## Step 1: Back up the original flash
 
-Clip the programmer onto the original XM25QH32B and **read it at least twice**:
+Clip the programmer onto the original XM25QH32B and **read it at least twice**.
+I used AsProgrammer for reading the chips and backing up the firmwares. 
 
-```bash
-flashrom -p ch341a_spi -r backup1.bin
-flashrom -p ch341a_spi -r backup2.bin
-md5sum backup1.bin backup2.bin   # both must match
-```
 
 > [!IMPORTANT]
 > This backup is your only way back to the stock firmware. It also holds the **Wi-Fi calibration data and MAC addresses**, which are unique to your board. Without them Wi-Fi won't work properly. Keep it safe, and **don't publish it**: it contains your stock Wi-Fi password and admin login in plain text.
@@ -149,14 +145,9 @@ EOF
 
 Write it to the Winbond chip, then read it back and compare:
 
-```bash
-flashrom -p ch341a_spi -w backup_16MB.bin
-flashrom -p ch341a_spi -r verify.bin
-md5sum backup_16MB.bin verify.bin
-```
 
 > [!NOTE]
-> My spare W25Q128 turned out to come from a **ZTE ZXHN H108N** (a Vodafone ADSL router). Reading a donor chip first is a good habit: it confirms that the chip and the programmer both work. Its old contents get overwritten anyway.
+> My spare W25Q128 turned out to come from an old and scavenged **ZTE ZXHN H108N** (a Vodafone ADSL router). Reading a donor chip first is a good habit: it confirms that the chip and the programmer both work. Its old contents get overwritten anyway.
 
 ---
 
@@ -290,73 +281,6 @@ This loads OpenWrt **into RAM only**. Nothing is written to flash, and pulling t
 
 ---
 
-## Step 7: The mystery reboots
-
-OpenWrt booted, then **rebooted on its own every time**, at exactly the same point:
-
-```text
-[   22.182885] mt76_wmac 10300000.wmac: firmware init done
-[04000D08][04000D07]          <- straight back to U-Boot
-U-Boot 1.1.3 ...
-```
-
-I narrowed it down with test images:
-
-| Test | Result |
-|---|---|
-| Official ASUS image | Resets as the 2.4 GHz radio starts |
-| Image with the ASUS LED/button pins removed | Same |
-| Image with the 2.4 GHz radio disabled | Resets as the **5 GHz** radio starts |
-| **Stock firmware** with the flash lock patched out | **Also resets** as the radio starts |
-
-That last result was the key. Two completely unrelated firmwares failed at the same moment: when a radio switches on and the board first draws real current. That pointed to hardware, not OpenWrt.
-
-**The fix: a better power supply.** With a **12 V 2 A** adapter, OpenWrt booted all the way, both radios came up, and it stayed stable.
-
-> [!IMPORTANT]
-> If a router resets with no error message at the moment Wi-Fi starts, **check the power supply first**. In my very first attempt the board was also powered only from the UART adapter's 3.3 V pin, which can't deliver anywhere near enough current.
-
----
-
-## Step 8: Build a firmware image for this board
-
-The ASUS image works, but it drives pins for **ASUS LEDs and buttons** that are wired differently on the PIX-LINK. Its port layout and WAN MAC address are also wrong for this board. Rather than compile OpenWrt from scratch, I modified the **official** ASUS sysupgrade image directly.
-
-### 8.1 Find the PIX-LINK's own pins
-
-I disassembled the stock firmware's programs (`nvram_daemon` for the buttons, `goahead` for the LEDs) and traced their GPIO calls:
-
-| Function | GPIO | Active | Found in |
-|---|---|---|---|
-| Status / WPS LED | 37 | low | `goahead`, WPS LED routine |
-| 2.4 GHz LED | 44 | low | MT7628's dedicated Wi-Fi LED pin |
-| WPS button | 38 | low | `nvram_daemon` |
-| Reset button | 11 | low | `goahead` (confirmed by testing) |
-| WAN port | switch port 4 | | stock kernel config `CONFIG_WAN_AT_P4=y` |
-
-### 8.2 Device tree changes
-
-The device tree is appended to the end of the decompressed kernel. I unpacked it, edited it, repacked it and updated the checksums:
-
-```dts
-model = "PIX-LINK LV-AC06";
-
-keys {
-    reset { gpios = <&gpio 11 GPIO_ACTIVE_LOW>; linux,code = <KEY_RESTART>; };
-    wps   { gpios = <&gpio 38 GPIO_ACTIVE_LOW>; linux,code = <KEY_WPS_BUTTON>; };
-};
-
-leds {
-    status { gpios = <&gpio 37 GPIO_ACTIVE_LOW>; };   /* boot / running / upgrade */
-    wlan2g { gpios = <&gpio 44 GPIO_ACTIVE_LOW>; linux,default-trigger = "phy0tpt"; };
-};
-
-&esw { mediatek,portmap = <0x2f>; };                   /* WAN on port 4 */
-
-/* also: removed the ASUS "enable-leds" GPIO hog and USB LED,
-   disabled USB (no port on this board), and set the refclk, wdt
-   and wled_an pin groups to GPIO mode */
-```
 
 ### 8.3 Network defaults
 
@@ -375,23 +299,6 @@ Each LAN port is its own VLAN and bridge member, so you can **add or remove each
 
 > [!NOTE]
 > The MT7628 switch has no separate network device per port in OpenWrt, so VLANs are the only way to control ports individually. The trade-off is that LAN-to-LAN traffic goes through the CPU, not the switch hardware.
-
-### 8.4 Repacking the sysupgrade image
-
-An OpenWrt sysupgrade image for this target is laid out like this:
-
-```text
-[ uImage header | LZMA kernel + DTB ][ SquashFS rootfs ][ 0xFF pad to 64 KB ][ DEADC0DE ][ metadata + trailers ]
-```
-
-To rebuild it:
-
-1. Decompress the kernel, replace the device tree, recompress with the **same LZMA settings**, then fix the uImage size and both CRCs.
-2. Rebuild the SquashFS root filesystem (xz, 1 MB blocks) with the edited `02_network`.
-3. Pad to the next 64 KB boundary and append the `DEADC0DE` end marker.
-4. Re-append the metadata blocks (`FWx0` trailers). Their CRC32 uses OpenWrt's `fwtool` variant: initial value `0xFFFFFFFF`, **no final XOR**.
-
-I checked every rebuild by mounting the new SquashFS and comparing it with the original. Only the one edited script differed, and all permissions, owners and device nodes were unchanged.
 
 ---
 
@@ -437,7 +344,6 @@ Something went wrong? None of this touches U-Boot, so you can always get back in
 
 - **Always read a flash chip twice** and compare before changing anything.
 - **Check the power supply early.** I spent hours on a "software" problem that was really a power supply problem.
-- **Change one thing at a time.** The A/B test images are what showed that the fault wasn't in OpenWrt.
 - **Look for a donor device.** A supported router with the same chips and flash layout saves you from writing a port from scratch.
 - **Vendor firmware can contain surprises,** like a lock that only accepts the original flash chip.
 - **RAM-boot before you flash.** U-Boot's TFTP boot made every experiment risk-free.
@@ -447,8 +353,7 @@ Something went wrong? None of this touches U-Boot, so you can always get back in
 ## Open items
 
 - [ ] Map the physical LAN sockets to switch ports 0–3, and renumber if needed
-- [ ] Submit proper device support to OpenWrt upstream (DTS + `mt76x8.mk` + `02_network`)
-- [ ] Test on the LV-AC05 and LV-AC09
+
 
 ---
 
