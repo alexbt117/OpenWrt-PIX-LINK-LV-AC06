@@ -26,12 +26,11 @@ The PIX-LINK LV-AC06 is **not** officially supported by OpenWrt. Everything here
 8. [Step 4: Connect to the serial console](#step-4-connect-to-the-serial-console)
 9. [Step 5: The stock firmware's flash lock](#step-5-the-stock-firmwares-flash-lock)
 10. [Step 6: Boot OpenWrt from RAM over TFTP](#step-6-boot-openwrt-from-ram-over-tftp)
-11. [Step 7: The mystery reboots](#step-7-the-mystery-reboots)
-12. [Step 8: Build a firmware image for this board](#step-8-build-a-firmware-image-for-this-board)
-13. [Step 9: Flash it permanently](#step-9-flash-it-permanently)
-14. [Recovery](#recovery)
-15. [Lessons learned](#lessons-learned)
-16. [Open items](#open-items)
+11. [Step 7: Network defaults](#step-7-network-defaults)
+12. [Step 8: Flash it permanently](#step-8-flash-it-permanently)
+13. [Recovery](#recovery)
+14. [Lessons learned](#lessons-learned)
+15. [Open items](#open-items)
 
 ---
 
